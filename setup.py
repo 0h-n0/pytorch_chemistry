@@ -25,7 +25,7 @@ setuptools.setup(
     description="Drug Discovery Library based on Deep Learning",
     long_description=(p.parent / 'README.md').open(encoding='utf-8').read(),
     packages=setuptools.find_packages(),
-    install_requires=[
+    install_requires=['h5py', 'tqdm'
     ],
     setup_requires=['numpy', 'pytest-runner'],
     tests_require=['pytest-cov', 'pytest-html', 'pytest'],

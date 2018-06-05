@@ -5,7 +5,7 @@ from rdkit import Chem
 from tqdm import tqdm
 
 from .. import ChemistryDataset
-from .parser import BaseFileParser
+from .base_parser import BaseFileParser
 from ..preprocessors.common import MolFeatureExtractionError  # NOQA
 from ..preprocessors.mol_preprocessor import MolPreprocessor  # NOQA
 
