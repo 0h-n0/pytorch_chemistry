@@ -11,21 +11,11 @@ from torch._six import string_classes, int_classes
 from tqdm import tqdm
 
 
-from pytorch_chemistry.data.indexers import NumpyTupleDatasetFeatureIndexer  # NOQA
 
-
-class NumpyTupleDataset(object):
-    """Dataset of a tuple of datasets.
-    It combines multiple datasets into one dataset. Each example is represented
-    by a tuple whose ``i``-th item corresponds to the i-th dataset.
-    And each ``i``-th dataset is expected to be an instance of numpy.ndarray.
-    Args:
-        datasets: Underlying datasets. The ``i``-th one is used for the
-            ``i``-th item of each example. All datasets must have the same
-            length.
+class ChemistryDataset(object):
     """
-
-    def __init__(self, *datasets):
+    """
+    def __init__(self, dataset):
         if not datasets:
             raise ValueError('no datasets are given')
         length = len(datasets[0])
@@ -35,7 +25,7 @@ class NumpyTupleDataset(object):
                     'dataset of the index {} has a wrong length'.format(i))
         self._datasets = datasets
         self._length = length
-        self._features_indexer = NumpyTupleDatasetFeatureIndexer(self)
+        self._features_indexer = None
 
     def __getitem__(self, index):
         return self._datasets[index]
@@ -198,6 +188,7 @@ class SimpleDataset(object):
     def __getitem__(self, i):
         return self._dataset[i]
 
+
 class HDF5Dataset(object):
     def __init__(self, dataset):
         self._dataset = dataset
@@ -212,7 +203,6 @@ class HDF5Dataset(object):
         for key in self.keys:
             _out[key] = self._dataset[f'{i}'][key]
         return _out
-    
     
 
 def collate_fn(batch):
@@ -241,7 +231,7 @@ def collate_fn(batch):
                 # This is because it will be occured to affect training loss
                 # with multi gpu training.
                 padded_shape = list(batch[0].shape)
-                assert len(padded_shape) > 0, "the ditmenssion of padded_shape is smoething wrong."
+                assert len(padded_shape) > 0, "Dimension of padded_shape is smoething wrong."
                 inputs = []
                 for b in batch[1:]:
                     for idx, (p, _b) in enumerate(zip(padded_shape, b.shape)):

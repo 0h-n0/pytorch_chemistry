@@ -4,10 +4,10 @@ import numpy
 from rdkit import Chem
 from tqdm import tqdm
 
-from pytorch_chemistry.data import NumpyTupleDataset
-from pytorch_chemistry.data.parsers.base_parser import BaseFileParser
-from pytorch_chemistry.data.preprocessors.common import MolFeatureExtractionError  # NOQA
-from pytorch_chemistry.data.preprocessors.mol_preprocessor import MolPreprocessor  # NOQA
+from .. import ChemistryDataset
+from .parser import BaseFileParser
+from ..preprocessors.common import MolFeatureExtractionError  # NOQA
+from ..preprocessors.mol_preprocessor import MolPreprocessor  # NOQA
 
 
 

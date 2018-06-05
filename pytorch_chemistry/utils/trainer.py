@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from e2edd.utils.mylogger import mylogger
+from pytorch_chemistry.utils.mylogger import mylogger
 from pytorch_chemistry.models import Accuracy
 from pytorch_chemistry.models import AucRocAccuracy
 from pytorch_chemistry.models import SigmoidCrossEntropyLoss
