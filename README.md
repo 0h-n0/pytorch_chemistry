@@ -1,5 +1,5 @@
 # pytorch-chemistry
-This repo is forked from chainer-chemistry. Please also check [chainer-chemistry](https://github.com/pfnet-research/chainer-chemistry). 
+This repo is forked from chainer-chemistry. Please also check [chainer-chemistry](https://github.com/pfnet-research/chainer-chemistry).
 
 ### Features
 
@@ -23,12 +23,9 @@ This repo is forked from chainer-chemistry. Please also check [chainer-chemistry
 
 ### Requirements
 
-* pytorch >= 0.4.0
+* pytorch >= 1.3
 * rdkit >= 2018.03.1.0
-
-### build environment
-
-
+* torch-geometric
 
 ```shell
 $ (ex: conda installation)
@@ -47,5 +44,3 @@ $ (ex: conda installation)
   * https://github.com/pfnet-research/chainer-chemistry
 * DeepChem
   * https://github.com/deepchem/deepchem
-
-

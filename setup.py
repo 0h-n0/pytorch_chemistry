@@ -1,6 +1,3 @@
-"""
-"""
-
 import os
 import re
 import setuptools
@@ -19,7 +16,7 @@ version = get_version('pytorch_chemistry')
 setuptools.setup(
     name="pytorch_chemistry",
     version=version,
-    python_requires='>3.6.5',    
+    python_requires='>3.7',
     author="Koji Ono",
     author_email="kbu94982@gmail.com",
     description="Drug Discovery Library based on Deep Learning",
