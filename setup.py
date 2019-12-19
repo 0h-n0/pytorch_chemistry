@@ -2,6 +2,8 @@ import os
 import re
 import setuptools
 from pathlib import Path
+
+
 p = Path(__file__)
 
 def get_version(package):
@@ -19,14 +21,13 @@ setuptools.setup(
     python_requires='>3.7',
     author="Koji Ono",
     author_email="kbu94982@gmail.com",
-    description="Drug Discovery Library based on Deep Learning",
+    description="Deep learning experiments library for drug discovery.",
     long_description=(p.parent / 'README.md').open(encoding='utf-8').read(),
     packages=setuptools.find_packages(),
-    install_requires=['h5py', 'tqdm'
-    ],
+    install_requires=['requests',],
     setup_requires=['numpy', 'pytest-runner'],
     tests_require=['pytest-cov', 'pytest-html', 'pytest'],
     classifiers=[
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
     ],
 )
