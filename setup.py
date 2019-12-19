@@ -13,10 +13,10 @@ def get_version(package):
     init_py = open(os.path.join(package, '__init__.py')).read()
     return re.search("__version__ = ['\"]([^'\"]+)['\"]", init_py).group(1)
 
-version = get_version('pytorch_chemistry')
+version = get_version('torch_chemistry')
 
 setuptools.setup(
-    name="pytorch_chemistry",
+    name="torch_chemistry",
     version=version,
     python_requires='>3.7',
     author="Koji Ono",

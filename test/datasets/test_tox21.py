@@ -1,5 +1,5 @@
 
-from pytorch_chemistry.datasets.tox21 import Tox21Dataset
+from torch_chemistry.datasets.tox21 import Tox21Dataset
 
 
 

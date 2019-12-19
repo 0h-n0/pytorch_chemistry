@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 
-from pytorch_chemistry.datasets.tox21 import Tox21Dataset
+from torch_chemistry.datasets.tox21 import Tox21Dataset
 
 batch_size = 128
 

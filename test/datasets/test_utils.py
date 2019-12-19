@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from pytorch_chemistry.utils import to_Path
-from pytorch_chemistry.datasets.utils import (check_download_file_size,
+from torch_chemistry.utils import to_Path
+from torch_chemistry.datasets.utils import (check_download_file_size,
                                               check_local_file_size,
                                               download)
 
