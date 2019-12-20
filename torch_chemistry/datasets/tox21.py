@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from rdkit import Chem
 from rdkit.Chem import rdmolops
 
@@ -33,12 +36,15 @@ class Tox21Dataset(BaseDataset):
                     'SR-HSE', 'SR-MMP', 'SR-p53']
 
     def __init__(self, target='train', return_smiles=False, savedir='.',
-                 sparse=True, none_label=-1, max_atoms=0, save_preprocesed_file=True):
+                 sparse=False, none_label=-1, max_atoms=0, max_atom_types=0,
+                 save_preprocesed_file=True):
         self.target = target
         self.return_smiles = return_smiles
         self.savedir = savedir
+        self.sparse = sparse
         self.none_label = none_label
         self.max_atoms = max_atoms
+        self.max_atom_types = max_atom_types
         self.save_preprocesed_file = save_preprocesed_file
         zfilename = self._download(target, savedir)
         extracted_files = extract_zipfile(zfilename, savedir)
@@ -53,9 +59,13 @@ class Tox21Dataset(BaseDataset):
                 continue
             try:
                 n_atoms = m.GetNumAtoms()
+                n_atom_types = max([a.GetAtomicNum() for a in m.GetAtoms()])
                 if self.max_atoms < n_atoms:
                     self.max_atoms = n_atoms
+                if self.max_atom_types < n_atom_types:
+                    self.max_atom_types = n_atom_types
             except Exception as e:
+                print(e)
                 pass
             mols.append(m)
         return mols
@@ -75,14 +85,22 @@ class Tox21Dataset(BaseDataset):
     def __getitem__(self, idx):
         N = self.mols[idx].GetNumAtoms()
         atoms = torch.tensor([a.GetAtomicNum() for a in self.mols[idx].GetAtoms()])
-        padded_atoms = torch.zeros(self.max_atoms)
+        padded_atoms = torch.zeros(self.max_atoms).long()
         padded_atoms[:N] = atoms
-        edge = to_sparse(torch.from_numpy(rdmolops.GetAdjacencyMatrix(self.mols[idx])),
-                         self.max_atoms)
+        padded_atoms = torch.eye(self.max_atoms, self.max_atom_types)[padded_atoms, :]
+        padded_atoms[:, 0] = 0
+        edge = to_sparse(
+            torch.from_numpy(rdmolops.GetAdjacencyMatrix(self.mols[idx])),
+            self.max_atoms)
+
+        if self.sparse:
+            padded_atoms = to_sparse(padded_atoms)
+        else:
+            edge = edge.to_dense()
         label = self._get_label(self.mols[idx])
         return padded_atoms, edge, label
 
-    def _download(self, target, savedir='.'):
+    def _download(self, target, savedir='.') -> Path:
         url = self._urls[target]['url']
         filename = self._urls[target]['filename']
         savefilename = to_Path(savedir) / filename
