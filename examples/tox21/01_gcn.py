@@ -7,8 +7,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 import torchex.nn as exnn
+from torch_chemistry.nn import MaksedBCELoss
 from torch_chemistry.nn.conv.gcn_conv import GCNConv
 from torch_chemistry.datasets.tox21 import Tox21Dataset
+from torch_chemistry.nn.functional.metric import roc_curve
 
 class GCN(nn.Module):
     def __init__(self, max_atom_types, output_channels):
@@ -20,11 +22,12 @@ class GCN(nn.Module):
         self.linear2 = exnn.Linear(output_channels)
 
     def forward(self, nodes, edges):
+        B = nodes.size(0)
         x = self.gcn1(nodes, edges)
         x = F.relu(x)
         x = self.gcn2(x, edges)
         x = F.relu(x)
-        x = F.flatten(x)
+        x = x.reshape(B, -1)
         x = self.linear1(x)
         x = F.relu(x)
         x = self.linear2(x)
@@ -36,43 +39,37 @@ def one_epoch(args, mode, model, device, loader, optimizer, epoch):
         model.train()
     else:
         model.eval()
-    loss = 0
+    total_loss = 0
     correct = 0
+    n_valid_data = 0
+    loss_func = MaksedBCELoss()
+
     for batch_idx, (nodes, edges, labels) in enumerate(loader):
         nodes, edges, labels = nodes.to(device), edges.to(device), labels.to(device)
         if mode == 'train':
             optimizer.zero_grad()
-        mask = labels[labels ==  -1]
+        mask = labels.ne(-1)
         output = model(nodes, edges)
-        # todo masked binary cross entropy loss
-        loss = F.nll_loss(output, target)
+        loss = loss_func(output, labels.float(), mask)
+        total_loss += loss.item()
+        correct += output.masked_select(labels.eq(1)).ge(0.5).sum()
+        correct += output.masked_select(labels.eq(0)).le(0.5).sum()
+        roc_curve(output.masked_select(mask),
+                  labels.masked_select(mask))
+        n_valid_data += mask.sum()
         if mode == 'train':
             loss.backward()
             optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('{} Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                mode, epoch, batch_idx * len(data), len(loader.dataset),
+                mode, epoch, batch_idx * len(nodes), len(loader.dataset),
                 100. * batch_idx / len(loader), loss.item()))
 
+    total_loss /= n_valid_data
 
-def test(args, model, device, test_loader):
-    model.eval()
-    test_loss = 0
-    correct = 0
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-    test_loss /= len(test_loader.dataset)
-
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-
+    print('\n{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
+        mode, total_loss, correct, n_valid_data,
+        100. * correct / n_valid_data))
 
 
 def main():
@@ -83,7 +80,7 @@ def main():
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=14, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
                         help='Learning rate step gamma (default: 0.7)')
@@ -119,15 +116,15 @@ def main():
                                                            max_atom_types=args.max_atom_types),
                                               batch_size=args.batch_size, shuffle=True)
 
-    model = GCN(args.max_atom_types).to(device)
-    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+    model = GCN(args.max_atom_types, 12).to(device)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     for epoch in range(1, args.epochs + 1):
         one_epoch(args, 'train', model, device, train_loader, optimizer, epoch)
-        one_epoch(args, 'val', model, device, train_loader, optimizer, epoch)
+        one_epoch(args, 'val', model, device, val_loader, optimizer, epoch)
         scheduler.step()
-    one_epoch(args, 'test', model, device, train_loader, optimizer, epoch)
+    one_epoch(args, 'test', model, device, test_loader, optimizer, epoch)
 
     if args.save_model:
         torch.save(model.state_dict(), "mnist_cnn.pt")

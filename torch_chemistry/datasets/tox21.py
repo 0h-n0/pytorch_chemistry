@@ -97,7 +97,7 @@ class Tox21Dataset(BaseDataset):
             padded_atoms = to_sparse(padded_atoms)
         else:
             edge = edge.to_dense()
-        label = self._get_label(self.mols[idx])
+        label = self._get_label(self.mols[idx]).long()
         return padded_atoms, edge, label
 
     def _download(self, target, savedir='.') -> Path:
