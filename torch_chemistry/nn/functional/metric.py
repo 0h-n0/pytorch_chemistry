@@ -12,20 +12,26 @@ def roc_curve(y_score, y_true):
     _dtype = y_true.dtype
     last = torch.tensor([sorted_y_true.shape[0] - 1],
                         dtype=_dtype, device=_device)
+    first = torch.tensor([0],
+                         dtype=_dtype, device=_device)
     threshold_idxs = torch.cat([torch.where(diff(sorted_y_score))[0],
                                 last])
-    tps = torch.cumsum(sorted_y_true)[threshold_idxs]
+    threshold_idxs = torch.cat([first,
+                                threshold_idxs])
+    tps = torch.cumsum(sorted_y_true, dim=0)[threshold_idxs]
     fps = 1 + threshold_idxs - tps
+    tps = torch.cat([first, tps])
+    print(len(fps), len(tps))
+    fps = torch.cat([first, fps])
+    fpr = fps / fps[-1]
+    tpr = tps / tps[-1]
+    return fpr, tpr, threshold_idxs
 
 
-    return fps, tps, soreted_y_score[threshold_idxs]
-
-
-def auc():
-    return
+def auc(x, y):
+    return torch.trapz(y, x)
 
 
 def roc_auc_score(y_score, y_true):
-    fps, tps, _ = roc_curve(y_score, y_true)
-    torch.trapz(
-    return
+    fpr, tpr, _ = roc_curve(y_score, y_true)
+    return auc(fpr, tpr)
