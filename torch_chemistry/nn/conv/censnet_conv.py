@@ -87,31 +87,33 @@ class CensNetConv(GNNConv):
         return binary_transformation_matrix
 
     def node_forward(self, nodes, edges, edge_features, edge_adj):
-        h_node = nodes.matmul(self.node_in_node_weight)
-        if self.node_in_node_bias is not None:
-             h_node = h_node + self.node_in_node_bias
-        adj = self._laplacianize(edges)
-        h_node = adj.matmul(h_node)
-        h_edge = edge_features.matmul(self.edge_in_node_weight)
-
         btm = self._create_binary_transformation_matrix(edges)
+        h_edge = edge_features.matmul(self.edge_in_node_weight)
         diag_edge = torch.diag_embed(h_edge, dim1=1, dim2=2)
         h_edge = btm.matmul(diag_edge)
         h_edge = h_edge.matmul(btm.transpose(1, 2))
-        return h_edge * h_node
+        adj = self._laplacianize(edges)
+        adj = h_edge * adj
+
+        h_node = nodes.matmul(self.node_in_node_weight)
+        if self.node_in_node_bias is not None:
+             h_node = h_node + self.node_in_node_bias
+        h_node = adj.matmul(h_node)
+        return h_node
 
     def edge_forward(self, nodes, edges, edge_features, edge_adj):
-        h_edge = edge_features.matmul(self.edge_in_edge_weight)
-        if self.edge_in_edge_bias is not None:
-             h_edge = h_edge + self.edge_in_edge_bias
-        edge_adj = self._laplacianize(edge_adj)
-        h_edge = edge_adj.matmul(h_edge)
-
         btm = self._create_binary_transformation_matrix(edges)
         h_node = nodes.matmul(self.node_in_edge_weight)
         diag_node = torch.diag_embed(h_node, dim1=1, dim2=2)
         h_node = btm.transpose(1, 2).matmul(diag_node.matmul(btm))
-        return h_node * h_edge
+        edge_adj = self._laplacianize(edge_adj)
+        edge_adj = h_node * edge_adj
+
+        h_edge = edge_features.matmul(self.edge_in_edge_weight)
+        if self.edge_in_edge_bias is not None:
+             h_edge = h_edge + self.edge_in_edge_bias
+        h_edge = edge_adj.matmul(h_edge)
+        return h_edge
 
     def forward(self, nodes, edges, edge_features):
         edge_adj = self._create_edge_adj(edges)
