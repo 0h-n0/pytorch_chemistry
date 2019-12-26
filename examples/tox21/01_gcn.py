@@ -55,7 +55,7 @@ def one_epoch(args, mode, model, device, loader, optimizer, epoch):
         if mode == 'train':
             optimizer.zero_grad()
         mask = labels.ne(-1)
-        output = model(nodes, edges)
+        output = model(nodes, edges.float())
         loss = loss_func(output, labels.float(), mask)
         total_loss += loss.item()
         all_labels += labels.masked_select(mask).reshape(-1).detach().cpu().numpy().tolist()

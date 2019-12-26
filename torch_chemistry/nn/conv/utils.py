@@ -1,5 +1,6 @@
 import torch
 
+
 def batched_sparse_eyes(node_size: tuple or list, batch_size: int, dtype, device):
     i = torch.arange(node_size).repeat(batch_size)
     batch_indceis = torch.repeat_interleave(torch.arange(batch_size), node_size)
