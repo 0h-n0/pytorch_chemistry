@@ -39,6 +39,5 @@ class GCNConv(GNNConv):
         if self.bias is not None:
              h = h + self.bias
         adj = self._laplacianize(edges)
-        print(adj.shape)
         h = adj.matmul(h)
         return h

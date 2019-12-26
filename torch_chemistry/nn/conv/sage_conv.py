@@ -6,7 +6,7 @@ from . import GNNConv
 from ..init import feedforward_init
 
 
-class SAGEconv(GNNConv):
+class SAGEConv(GNNConv):
     def __init__(self):
         pass
 
