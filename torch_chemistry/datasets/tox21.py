@@ -3,19 +3,21 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 import torch_geometric
+from torch_geometric.data import Data
+from torch_sparse import coalesce
 from rdkit import Chem
 from rdkit.Chem import rdmolops
 
-from .base_dataset import BaseDataset
+from .base_dataset import InMemoryRdkitDataset
 from .utils import (check_download_file_size,
                     check_local_file_size,
                     extract_zipfile,
-                    to_sparse,
+                    get_mol_edge_index,
                     download)
 from ..utils import to_Path
 
 
-class Tox21Dataset(BaseDataset):
+class Tox21Dataset(InMemoryRdkitDataset):
     _urls = {
         'train': {
             'url': 'https://tripod.nih.gov/tox21/challenge/download?id=tox21_10k_data_allsdf',
@@ -35,38 +37,88 @@ class Tox21Dataset(BaseDataset):
                     'NR-ER-LBD', 'NR-PPAR-gamma', 'SR-ARE', 'SR-ATAD5',
                     'SR-HSE', 'SR-MMP', 'SR-p53']
 
-    def __init__(self, target='train', return_smiles=False, savedir='.',
-                 sparse=False, none_label=-1, max_atoms=0, max_atom_types=0,
-                 save_preprocesed_file=True):
+    def __init__(self, target='train', return_edge_features=False,
+                 return_smiles=False, savedir='.',
+                 sparse=False, none_label=-1,
+                 max_atoms=0, max_atom_types=0,
+                 max_edges=0, max_edge_types=4,
+                 ):
         self.target = target
-        self.return_smiles = return_smiles
-        self.savedir = savedir
-        self.sparse = sparse
+        self.filename = self._urls[self.target]['filename'].replace('.zip', '')
         self.none_label = none_label
-        self.max_atoms = max_atoms
-        self.max_atom_types = max_atom_types
-        self.save_preprocesed_file = save_preprocesed_file
-        zfilename = self._download(target, savedir)
-        extracted_files = extract_zipfile(zfilename, savedir)
-        filename = extracted_files[0]
-        self.mols = self._preprocess(filename)
+        self.mol = self._get_valid_mols()
+        self._len = len(self.mol)
+        print(self._len)
+        super(Tox21Dataset, self).__init__(savedir, None, None, None)
+        self.data, self.slices = torch.load(self.processed_paths[0])
 
-    def _preprocess(self, filename):
-        tmpmols = Chem.SDMolSupplier(filename)
+    @property
+    def raw_file_names(self):
+        return self._urls[self.target]['filename'].replace('.zip', '')
+
+    @property
+    def processed_file_names(self):
+        return self._urls[self.target]['filename'].replace('.sdf.zip', '') + '.pt'
+
+    def download(self):
+        url = self._urls[self.target]['url']
+        filename = self._urls[self.target]['filename']
+        savefilename = to_Path(self.root) / filename
+        if savefilename.exists():
+            local_file_size = check_local_file_size(savefilename)
+            download_file_size = check_download_file_size(url)
+            if local_file_size != download_file_size:
+                download(url, filename, self.root)
+        else:
+            download(url, filename, self.root)
+        extracted_files = extract_zipfile(savefilename, self.root)
+
+    def process(self):
+        mols = self.mol
+        data_list = []
+        max_n_types = 0
+        for mol in mols:
+            n_types = torch.max(torch.tensor([m.GetAtomicNum() for m in mol.GetAtoms()]))
+            if n_types > max_n_types:
+                max_n_types = n_types
+        for m in mols:
+            d = self._create_data_object(m, max_n_types+1)
+            if d is not None:
+                data_list.append(d)
+
+        if self.pre_filter is not None:
+            data_list = [data for data in data_list if self.pre_filter(data)]
+        if self.pre_transform is not None:
+            data_lsit = [self.pre_transform(data) for data in data_list]
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
+
+    def _create_data_object(self, mol, max_n_types):
+        atoms = torch.tensor([m.GetAtomicNum() for m in mol.GetAtoms()])
+        atoms = F.one_hot(atoms, max_n_types)
+        edge_index, edge_attr = get_mol_edge_index(mol, self.edge_types)
+        if edge_index.nelement() == 0:
+            return None
+        label = self._get_label(mol).long()
+        n_edges = mol.GetNumBonds()
+        N = mol.GetNumAtoms()
+        edge_index, edge_attr = coalesce(edge_index, edge_attr, N, N)
+        return Data(atoms, edge_index, edge_attr, label)
+
+    def _get_valid_mols(self):
+        tmpmols = Chem.SDMolSupplier(self.filename)
         mols = []
         for m in tmpmols:
             if m is None:
                 continue
             try:
-                n_atoms = m.GetNumAtoms()
-                n_atom_types = max([a.GetAtomicNum() for a in m.GetAtoms()])
-                if self.max_atoms < n_atoms:
-                    self.max_atoms = n_atoms
-                if self.max_atom_types < n_atom_types:
-                    self.max_atom_types = n_atom_types
+                rdmolops.GetAdjacencyMatrix(m)
             except Exception as e:
                 print(e)
-                pass
+                continue
+            edge_index, _ = get_mol_edge_index(m, self.edge_types)
+            if edge_index.nelement() == 0:
+                continue
             mols.append(m)
         return mols
 
@@ -80,35 +132,4 @@ class Tox21Dataset(BaseDataset):
         return torch.tensor(labels)
 
     def __len__(self):
-        return len(self.mols)
-
-    def __getitem__(self, idx):
-        N = self.mols[idx].GetNumAtoms()
-        atoms = torch.tensor([a.GetAtomicNum() for a in self.mols[idx].GetAtoms()])
-        padded_atoms = torch.zeros(self.max_atoms).long()
-        padded_atoms[:N] = atoms
-        padded_atoms = torch.eye(self.max_atoms, self.max_atom_types)[padded_atoms, :]
-        padded_atoms[:, 0] = 0
-        edge = to_sparse(
-            torch.from_numpy(rdmolops.GetAdjacencyMatrix(self.mols[idx])),
-            self.max_atoms)
-
-        if self.sparse:
-            padded_atoms = to_sparse(padded_atoms)
-        else:
-            edge = edge.to_dense()
-        label = self._get_label(self.mols[idx]).long()
-        return padded_atoms, edge, label
-
-    def _download(self, target, savedir='.') -> Path:
-        url = self._urls[target]['url']
-        filename = self._urls[target]['filename']
-        savefilename = to_Path(savedir) / filename
-        if savefilename.exists():
-            local_file_size = check_local_file_size(savefilename)
-            download_file_size = check_download_file_size(url)
-            if local_file_size != download_file_size:
-                download(url, filename, savedir)
-        else:
-            download(url, filename, savedir)
-        return savefilename
+        return self._len

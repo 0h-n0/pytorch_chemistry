@@ -6,6 +6,7 @@ from typing import List
 
 import requests
 import torch
+import torch.nn.functional as F
 
 from ..utils import to_Path
 
@@ -49,3 +50,24 @@ def to_sparse(x: torch.tensor, max_size: int = None):
         return sparse_tensortype(indices, values, x.size())
     else:
         return sparse_tensortype(indices, values, (max_size, max_size))
+
+def get_mol_edge_index(mol, edge_types: dict):
+    row, col, bond_idx = [], [], []
+    for bond in mol.GetBonds():
+        start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        row += [start, end]
+        col += [end, start]
+        bond_idx += 2 * [edge_types[bond.GetBondType()]]
+    edge_index = torch.tensor([row, col], dtype=torch.long)
+    edge_attr = F.one_hot(torch.tensor(bond_idx).long(),
+                          num_classes=len(edge_types)).to(torch.long)
+    return edge_index, edge_attr
+
+def to_one_hot(x: torch.tensor, n_classes: int):
+    length = len(x)
+    if length < n_classes:
+        _x = torch.arange(length)
+        out = torch.zeros(length, n_classes)
+        out[_x, x] = 1
+        return out
+    return torch.eye(length, n_classes)[x, :]
