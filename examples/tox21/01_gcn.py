@@ -9,9 +9,12 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 import torchex.nn as exnn
 from torch_chemistry.nn import MaksedBCELoss
-from torch_chemistry.nn.conv.gcn_conv import GCNConv
 from torch_chemistry.datasets.tox21 import Tox21Dataset
 from torch_chemistry.nn.functional.metric import roc_auc_score
+from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.data import DataLoader
+from torch_geometric.utils import to_dense_batch
+from torch_scatter import scatter_mean
 import numpy as np
 from sklearn.metrics import roc_auc_score
 
@@ -19,22 +22,21 @@ from sklearn.metrics import roc_auc_score
 class GCN(nn.Module):
     def __init__(self, max_atom_types, output_channels):
         super(GCN, self).__init__()
-        self.gcn1 = GCNConv(max_atom_types, 200)
-        self.gcn2 = GCNConv(200, 150)
-        self.dropout1 = nn.Dropout(0.25)
-        self.linear1 = exnn.Linear(100)
-        self.linear2 = exnn.Linear(output_channels)
+        self.g1 = GCNConv(100, 42)
+        self.g2 = GCNConv(42, 24)
+        self.g3 = GCNConv(24, 16)
+        self.l1 = nn.Linear(16, 10)
+        self.l2 = exnn.Linear(output_channels)
 
-    def forward(self, nodes, edges):
-        B = nodes.size(0)
-        x = self.gcn1(nodes, edges)
+    def forward(self, data):
+        x = self.g1(data.x.float(), data.edge_index)
         x = F.relu(x)
-        x = self.gcn2(x, edges)
+        x = self.g2(x, data.edge_index)
         x = F.relu(x)
-        x = x.reshape(B, -1)
-        x = self.linear1(x)
-        x = F.relu(x)
-        x = self.linear2(x)
+        x = self.g3(x, data.edge_index)
+        x = global_mean_pool(x, data.batch)
+        x = self.l1(x)
+        x = self.l2(x)
         return torch.sigmoid(x)
 
 
@@ -50,12 +52,13 @@ def one_epoch(args, mode, model, device, loader, optimizer, epoch):
     loss_func = MaksedBCELoss()
     all_outputs = []
     all_labels = []
-    for batch_idx, (nodes, edges, labels) in enumerate(loader):
-        nodes, edges, labels = nodes.to(device), edges.to(device), labels.to(device)
+    for batch_idx, data in enumerate(loader):
+        data = data.to(device)
         if mode == 'train':
             optimizer.zero_grad()
+        labels = data.y.reshape(-1)
         mask = labels.ne(-1)
-        output = model(nodes, edges.float())
+        output = model(data).reshape(-1)
         loss = loss_func(output, labels.float(), mask)
         total_loss += loss.item()
         all_labels += labels.masked_select(mask).reshape(-1).detach().cpu().numpy().tolist()
@@ -70,7 +73,7 @@ def one_epoch(args, mode, model, device, loader, optimizer, epoch):
             optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('{} Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                mode, epoch, batch_idx * len(nodes), len(loader.dataset),
+                mode, epoch, batch_idx * data.num_graphs, len(loader.dataset),
                 100. * batch_idx / len(loader), loss.item()))
 
     print('{} Epoch: {} {:.6f} AUC'.format(
@@ -117,15 +120,12 @@ def main():
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
-    train_loader = torch.utils.data.DataLoader(Tox21Dataset('train', max_atoms=args.max_atoms,
-                                                            max_atom_types=args.max_atom_types),
-                                               batch_size=args.batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(Tox21Dataset('val', max_atoms=args.max_atoms,
-                                                          max_atom_types=args.max_atom_types),
-                                             batch_size=args.batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(Tox21Dataset('test', max_atoms=args.max_atoms,
-                                                           max_atom_types=args.max_atom_types),
-                                              batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(Tox21Dataset('train'),
+                              batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(Tox21Dataset('val'),
+                            batch_size=args.batch_size, shuffle=True)
+    test_loader = DataLoader(Tox21Dataset('test'),
+                             batch_size=args.batch_size, shuffle=True)
 
     model = GCN(args.max_atom_types, 12).to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr)

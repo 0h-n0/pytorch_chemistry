@@ -37,18 +37,14 @@ class Tox21Dataset(InMemoryRdkitDataset):
                     'NR-ER-LBD', 'NR-PPAR-gamma', 'SR-ARE', 'SR-ATAD5',
                     'SR-HSE', 'SR-MMP', 'SR-p53']
 
-    def __init__(self, target='train', return_edge_features=False,
-                 return_smiles=False, savedir='.',
-                 sparse=False, none_label=-1,
-                 max_atoms=0, max_atom_types=0,
-                 max_edges=0, max_edge_types=4,
-                 ):
+    def __init__(self, target='train', savedir='.', none_label=-1, max_n_atoms=150, max_n_types=100):
         self.target = target
         self.filename = self._urls[self.target]['filename'].replace('.zip', '')
         self.none_label = none_label
+        self.max_n_atoms = max_n_atoms
+        self.max_n_types = max_n_types
         self.mol = self._get_valid_mols()
         self._len = len(self.mol)
-        print(self._len)
         super(Tox21Dataset, self).__init__(savedir, None, None, None)
         self.data, self.slices = torch.load(self.processed_paths[0])
 
@@ -81,8 +77,9 @@ class Tox21Dataset(InMemoryRdkitDataset):
             n_types = torch.max(torch.tensor([m.GetAtomicNum() for m in mol.GetAtoms()]))
             if n_types > max_n_types:
                 max_n_types = n_types
+        max_n_types = self.max_n_types
         for m in mols:
-            d = self._create_data_object(m, max_n_types+1)
+            d = self._create_data_object(m, max_n_types)
             if d is not None:
                 data_list.append(d)
 
@@ -103,7 +100,9 @@ class Tox21Dataset(InMemoryRdkitDataset):
         n_edges = mol.GetNumBonds()
         N = mol.GetNumAtoms()
         edge_index, edge_attr = coalesce(edge_index, edge_attr, N, N)
-        return Data(atoms, edge_index, edge_attr, label)
+        data = Data(atoms, edge_index, edge_attr, label)
+        #data.num_nodes = self.max_n_atoms
+        return data
 
     def _get_valid_mols(self):
         tmpmols = Chem.SDMolSupplier(self.filename)
